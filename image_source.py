@@ -156,8 +156,9 @@ def cal_acc(loader, netF, netC1, netC2, flag=False):
             #inputs = data[0]
             #labels = data[1]
             inputs = inputs.cuda()
-            outputs1 = netC1(netF(inputs))
-            outputs2 = netC2(netF(inputs))
+            features = netF(inputs)
+            outputs1 = netC1(features)
+            outputs2 = netC2(features)
             outputs = outputs1 + outputs2
             if start_test:
                 all_output = outputs.float().cpu()
@@ -193,8 +194,9 @@ def cal_acc_oda(loader, netF, netC1, netC2):
             #inputs = data[0]
             #labels = data[1]
             inputs = inputs.cuda()
-            outputs1 = netC1(netF(inputs))
-            outputs2 = netC2(netF(inputs))
+            features = netF(inputs)
+            outputs1 = netC1(features)
+            outputs2 = netC2(features)
             outputs = outputs1 + outputs2
             if start_test:
                 all_output = outputs.float().cpu()
@@ -223,15 +225,24 @@ def cal_acc_oda(loader, netF, netC1, netC2):
     # return np.mean(acc), np.mean(acc[:-1])
 
 def loss_function(netF, netC1, netC2, inputs_source, labels_source):
-    outputs_source1 = netC1(netF(inputs_source))
-    outputs_source2 = netC2(netF(inputs_source))
-    classifier_loss1 = CrossEntropyLabelSmooth(num_classes=args.class_num, epsilon=args.smooth)(outputs_source1, labels_source).cuda()
-    classifier_loss2 = CrossEntropyLabelSmooth(num_classes=args.class_num, epsilon=args.smooth)(outputs_source2, labels_source).cuda()
-    #classifier_loss1 = nn.CrossEntropyLoss()(outputs_source1, labels_source).cuda()
-    #classifier_loss2 = nn.CrossEntropyLoss()(outputs_source2, labels_source).cuda()
-    classifier_loss = classifier_loss1 + classifier_loss2
+    features_source = netF(inputs_source)
 
-    return classifier_loss
+    outputs_source1 = netC1(features_source)
+    outputs_source2 = netC2(features_source)
+
+    classifier_loss1 = CrossEntropyLabelSmooth(
+        num_classes=args.class_num,
+        epsilon=args.smooth
+    )(outputs_source1, labels_source).cuda()
+
+    classifier_loss2 = CrossEntropyLabelSmooth(
+        num_classes=args.class_num,
+        epsilon=args.smooth
+    )(outputs_source2, labels_source).cuda()
+
+    return classifier_loss1 + classifier_loss2
+
+
 
 def train_source(args):
     dset_loaders = data_load(args)
@@ -272,7 +283,10 @@ def train_source(args):
         netC1 = nn.DataParallel(netC1, device_ids=gpu_list)
         netC2 = nn.DataParallel(netC2, device_ids=gpu_list)
           
-    param_group_f = list(netF.parameters())
+    param_group_f = [
+        parameter for parameter in netF.parameters()
+        if parameter.requires_grad
+    ]
     param_group_c = list(netC1.parameters()) + list(netC2.parameters())
 
     if args.SAM:
@@ -352,79 +366,79 @@ def train_source(args):
             args.out_file.write(log_str + '\n')
             args.out_file.flush()
             print(log_str+'\n')
+            if args.eval_targets:
+                for i in range(len(names)):
+                    if i == args.s:
+                        continue
+                    args.t = i
+                    # args.name = names[args.s][0].upper() + names[args.t][0].upper()
 
-            for i in range(len(names)):
-                if i == args.s:
-                    continue
-                args.t = i
-                # args.name = names[args.s][0].upper() + names[args.t][0].upper()
-
-                if args.dset == 'terra_incognita':
-                    args.name = names[args.s] + '->' + names[args.t]
-                else:
-                    args.name = names[args.s][0].upper() + names[args.t][0].upper()
-
-                args.test_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
-
-                if args.dset == 'office-home':
-                    if args.da == 'pda':
-                        args.class_num = 65
-                        args.src_classes = [i for i in range(65)]
-                        args.tar_classes = [i for i in range(25)]
-                    if args.da == 'oda':
-                        args.class_num = 25
-                        args.src_classes = [i for i in range(25)]
-                        args.tar_classes = [i for i in range(65)]
-
-                if args.dset == 'office':
-                    if args.da == 'pda':
-                        args.class_num = 31
-                        args.src_classes = [i for i in range(31)]
-                        args.tar_classes = [i for i in range(10)]
-                    if args.da == 'oda':
-                        args.class_num = 10
-                        args.src_classes = [i for i in range(10)]
-                        args.tar_classes = [i for i in range(31)]
-
-                if args.dset == 'VISDA-C':
-                    if args.da == 'pda':
-                        args.class_num = 12
-                        args.src_classes = [i for i in range(12)]
-                        args.tar_classes = [i for i in range(6)]
-                    if args.da == 'oda':
-                        args.class_num = 6
-                        args.src_classes = [i for i in range(6)]
-                        args.tar_classes = [i for i in range(12)]
-
-                if args.da == 'oda':
-                    print(args.src_classes)
-                
-                dset_loaders_test = data_load_test(args)
-                dset_loaders_test['test'] = tqdm(dset_loaders_test['test'])
-                if args.da == 'oda':
-                    if args.dset=='VISDA-C':
-                        acc_os1, acc_os2, acc_unknown, acc_list = cal_acc_oda(dset_loaders_test['test'], netF, netC1, netC2)
-                        log_str = '\nTraining: {}, Task: {}, Accuracy = {:.2f}% / {:.2f}% / {:.2f}%'.format(args.trte, args.name, acc_os2, acc_os1, acc_unknown) + '\n' + acc_list
-
+                    if args.dset == 'terra_incognita':
+                        args.name = names[args.s] + '->' + names[args.t]
                     else:
-                        acc_os1, acc_os2, acc_unknown = cal_acc_oda(dset_loaders_test['test'], netF, netC1, netC2)
-                        log_str = '\nTraining: {}, Task: {}, Accuracy = {:.2f}% / {:.2f}% / {:.2f}%'.format(args.trte, args.name, acc_os2, acc_os1, acc_unknown)
-                else:
-                    if args.dset=='VISDA-C':
-                        acc, acc_list = cal_acc(dset_loaders_test['test'], netF, netC1, netC2, True)
-                        log_str = '\nTask: {}, Accuracy = {:.2f}%'.format(args.name, acc) + '\n' + acc_list
-                    else:
-                        acc, _ = cal_acc(dset_loaders_test['test'], netF, netC1, netC2, False)
-                        log_str = '\nTask: {}, Accuracy = {:.2f}%'.format(args.name, acc)
+                        args.name = names[args.s][0].upper() + names[args.t][0].upper()
 
-                if args.da == 'oda':
-                    test_acc += acc_os2
-                else:
-                    test_acc += acc
-                print("test_acc:{}".format(test_acc))
-                args.out_file.write(log_str + '\n')
-                args.out_file.flush()
-                print(log_str+'\n')
+                    args.test_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
+
+                    if args.dset == 'office-home':
+                        if args.da == 'pda':
+                            args.class_num = 65
+                            args.src_classes = [i for i in range(65)]
+                            args.tar_classes = [i for i in range(25)]
+                        if args.da == 'oda':
+                            args.class_num = 25
+                            args.src_classes = [i for i in range(25)]
+                            args.tar_classes = [i for i in range(65)]
+
+                    if args.dset == 'office':
+                        if args.da == 'pda':
+                            args.class_num = 31
+                            args.src_classes = [i for i in range(31)]
+                            args.tar_classes = [i for i in range(10)]
+                        if args.da == 'oda':
+                            args.class_num = 10
+                            args.src_classes = [i for i in range(10)]
+                            args.tar_classes = [i for i in range(31)]
+
+                    if args.dset == 'VISDA-C':
+                        if args.da == 'pda':
+                            args.class_num = 12
+                            args.src_classes = [i for i in range(12)]
+                            args.tar_classes = [i for i in range(6)]
+                        if args.da == 'oda':
+                            args.class_num = 6
+                            args.src_classes = [i for i in range(6)]
+                            args.tar_classes = [i for i in range(12)]
+
+                    if args.da == 'oda':
+                        print(args.src_classes)
+                    
+                    dset_loaders_test = data_load_test(args)
+                    dset_loaders_test['test'] = tqdm(dset_loaders_test['test'])
+                    if args.da == 'oda':
+                        if args.dset=='VISDA-C':
+                            acc_os1, acc_os2, acc_unknown, acc_list = cal_acc_oda(dset_loaders_test['test'], netF, netC1, netC2)
+                            log_str = '\nTraining: {}, Task: {}, Accuracy = {:.2f}% / {:.2f}% / {:.2f}%'.format(args.trte, args.name, acc_os2, acc_os1, acc_unknown) + '\n' + acc_list
+
+                        else:
+                            acc_os1, acc_os2, acc_unknown = cal_acc_oda(dset_loaders_test['test'], netF, netC1, netC2)
+                            log_str = '\nTraining: {}, Task: {}, Accuracy = {:.2f}% / {:.2f}% / {:.2f}%'.format(args.trte, args.name, acc_os2, acc_os1, acc_unknown)
+                    else:
+                        if args.dset=='VISDA-C':
+                            acc, acc_list = cal_acc(dset_loaders_test['test'], netF, netC1, netC2, True)
+                            log_str = '\nTask: {}, Accuracy = {:.2f}%'.format(args.name, acc) + '\n' + acc_list
+                        else:
+                            acc, _ = cal_acc(dset_loaders_test['test'], netF, netC1, netC2, False)
+                            log_str = '\nTask: {}, Accuracy = {:.2f}%'.format(args.name, acc)
+
+                    if args.da == 'oda':
+                        test_acc += acc_os2
+                    else:
+                        test_acc += acc
+                    print("test_acc:{}".format(test_acc))
+                    args.out_file.write(log_str + '\n')
+                    args.out_file.flush()
+                    print(log_str+'\n')
             
             print("acc_best:{}".format(acc_best))
             if test_acc >= acc_best:
@@ -505,6 +519,7 @@ def print_args(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='SHOT++')
+    parser.add_argument('--eval_targets', action='store_true',help='Evaluate target domains during source training')
     parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
     parser.add_argument('--s', type=int, default=0, help="source")
     parser.add_argument('--t', type=int, default=1, help="target")
