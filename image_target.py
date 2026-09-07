@@ -537,6 +537,7 @@ if __name__ == "__main__":
     parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
     parser.add_argument('--s', type=int, default=0, help="source")
     parser.add_argument('--t', type=int, default=1, help="target")
+    parser.add_argument('--target_only', type=int, default=None)
     parser.add_argument('--max_iter', type=int, default=30000, help="max iterations")
     parser.add_argument('--interval', type=int, default=150)
     parser.add_argument('--batch_size', type=int, default=128, help="batch_size")
@@ -595,8 +596,12 @@ if __name__ == "__main__":
     random.seed(SEED)
     #torch.backends.cudnn.deterministic = True
     #torch.backends.cudnn.benchmark = True
-
-    for i in range(len(names)):
+    target_indices = (
+        [args.target_only]
+        if args.target_only is not None
+        else range(len(names))
+    )
+    for i in target_indices:
         if i == args.s:
             continue
         args.t = i
