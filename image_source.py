@@ -441,12 +441,12 @@ def train_source(args):
                     print(log_str+'\n')
             
             print("acc_best:{}".format(acc_best))
-            if test_acc >= acc_best:
-                acc_best = test_acc
+            if acc_s_te >= acc_best:
+                acc_best = acc_s_te
                 print('Save the model with best test acc:', acc_best)
-                best_netF = netF.state_dict()
-                best_netC1 = netC1.state_dict()
-                best_netC2 = netC2.state_dict()
+                best_netF = copy.deepcopy(netF.state_dict())
+                best_netC1 = copy.deepcopy(netC1.state_dict())
+                best_netC2 = copy.deepcopy(netC2.state_dict())
 
             netF.train()
             netC1.train()
