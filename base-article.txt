@@ -1,0 +1,1043 @@
+Asymmetric Co-Training for Source-Free Few-Shot Domain Adaptation
+Gengxu Li1 , Yuan Wu1 1School of Artificial intelligence, Jilin University
+yuanwu@jlu.edu.cn
+
+arXiv:2502.14214v1 [cs.LG] 20 Feb 2025
+
+Abstract
+Source-free unsupervised domain adaptation (SFUDA) has gained significant attention as an alternative to traditional unsupervised domain adaptation (UDA), which relies on the constant availability of labeled source data. However, SFUDA approaches come with inherent limitations that are frequently overlooked. These challenges include performance degradation when the unlabeled target data fails to meet critical assumptions, such as having a closed-set label distribution identical to that of the source domain, or when sufficient unlabeled target data is unavailable--a common situation in real-world applications. To address these issues, we propose an asymmetric co-training (ACT) method specifically designed for the SFFSDA scenario. SFFSDA presents a more practical alternative to SFUDA, as gathering a few labeled target instances is more feasible than acquiring large volumes of unlabeled target data in many real-world contexts. Our ACT method begins by employing a weak-strong augmentation to enhance data diversity. Then we use a two-step optimization process to train the target model. In the first step, we optimize the label smoothing crossentropy loss, the entropy of the class-conditional distribution, and the reverse-entropy loss to bolster the model's discriminative ability while mitigating overfitting. The second step focuses on reducing redundancy in the output space by minimizing classifier determinacy disparity. Extensive experiments across four benchmarks demonstrate the superiority of our ACT approach, which outperforms state-of-the-art SFUDA methods and transfer learning techniques. Our findings suggest that adapting a source pre-trained model using only a small amount of labeled target data offers a practical and dependable solution. The code is available at https://github.com/gengxuli/ACT.
+Corresponding author
+
+Figure 1: Comparison with SFUDA and transfer learning methods on OfficeHome dataset under 3-shot setting.
+1 Introduction
+In recent years, deep neural networks (DNNs) have achieved remarkable success across a wide array of applications. However, these achievements often rest on a key assumption: the training data (source domain) and test data (target domain) are drawn from the same distribution. In real-world scenarios, this assumption frequently does not hold [Goodfellow, 2016]. When the test data distribution diverges from that of the training data, DNN models suffer a substantial performance decline [Buda et al., 2018]. This phenomenon, known as domain shift [Ben-David et al., 2010], limits the generalizability of DNNs. Unsupervised Domain Adaptation (UDA) [Sun et al., 2016; Long et al., 2018; Wu et al., 2020; Du et al., 2021] has emerged as a promising solution to address domain shift by aligning learned representations between source and target domains, thereby improving model performance. Nevertheless, UDA's fundamental assumption--that both source and target data are simultaneously available during adaptation--is often violated due to constraints like data privacy, storage costs, transmission expenses, or the computational load of training on large-scale source data [Fang et al., 2022].
+To address these limitations, source-free unsupervised domain adaptation (SFUDA) [Liang et al., 2021; Qiu et al., 2021; Tian et al., 2021; Liang et al., 2020a] has been introduced. The primary distinction between UDA and SFUDA lies in the availability of source data. In SFUDA, source domain data is inaccessible during the adaptation process, and instead, the adaptation is based on a source pre-trained model, aligned with large-scale unlabeled target data [Liang et al.,
+
+2020a]. Due to growing concerns about data privacy, intellectual property, and the shift towards large-scale pre-training, the source-free paradigm has garnered considerable attention from the machine learning community [Li et al., 2024]. However, SFUDA models, which depend entirely on the largescale pre-provided unlabeled target data, face several challenges in real-world applications. First, sufficient unlabeled target data is not always available, complicating model adaptation with limited data. Second, the closed-set assumption, which assumes all target data falls within the source domain's classes, does not always hold. In practice, unlabeled target data may contain out-of-distribution (OOD) classes, resulting in adaptation failure. Finally, a shift in label distribution between source and target domains can further undermine adaptation. For example, a major class in the source domain might become a minor class in the target domain, disrupting the transfer of knowledge from the pre-trained model.
+In this work, We focus on source-free few-shot domain adaptation (SFFSDA), a novel setting where a small labeled support set (N × K instances) from the target domain is used to adapt pre-trained source models. Inspired by the N -way K-shot paradigm, SFFSDA is cost-effective and bypasses the need for large amounts of unlabeled target data, offering a practical alternative to SFUDA. Previous transfer learning works, like LCCS [Zhang et al., 2022], also try to address SFFSDA problems by using test-time adaptation. Unlike test-time adaptation methods relying on streaming data and affected by mini-batch size or class distribution, SFFSDA adapts using a small, labeled support set. LCCS reduces adaptation parameters via a low-dimensional approximation of batch normalization statistics, enabling adaptation with just one sample per class and achieving strong performance across benchmarks. However, these methods still encounter some issues, such as requiring large amounts of training data and high-quality few-shot samples. To tackle these issues, we propose an asymmetric co-training (ACT) method, which uses strong-weak augmentation to diversify the support set and a two-step optimization process to adapt pre-trained source models. In the optimization process, we first optimize label smoothing cross-entropy loss, classconditional entropies, and reverse cross-entropy loss to enhance model's discriminability. Second, we minimize classifier determinacy disparity to refine predictions. Additionally, Sharpness-Aware Minimization (SAM) is incorporated to improve the system performance. Experiments on multiple benchmarks demonstrate ACT's superiority over state-of-theart SFUDA methods, including SHOT [Liang et al., 2020a], SHOT++[Liang et al., 2021], LCCS[Zhang et al., 2022], FT, and LP-FT [Lee et al., 2023]. While SFFSDA operates without access to source data and relies on minimal labeled target examples, making it highly practical for real-world applications, it fundamentally differs from SFUDA, which requires large amounts of unlabeled target data. This distinction highlights the practical advantages of SFFSDA in scenarios where a limited amount of labeled target data can be obtained, yet it also necessitates reliable comparisons with unsupervised methods.
+
+2 Related Work
+2.1 Unsupervised Domain Adaptation (UDA)
+Unsupervised Domain Adaptation (UDA) methods address domain shift by jointly training a network on labeled source data and unlabeled target data, thereby aligning their feature distributions. Conventional UDA approaches tackle domain shift through two main strategies. Some methods [Long et al., 2015; Sun et al., 2016; Tzeng et al., 2014] employ moment matching to align feature distributions, with [Tzeng et al., 2014] being the first to introduce Maximum Mean Discrepancy (MMD) in domain adaptation. Others [Ganin and Lempitsky, 2015; Long et al., 2018; Wu et al., 2020] utilize adversarial training to learn domain-invariant features. Additionally, certain methods [Saito et al., 2018a; Li et al., 2021; Du et al., 2021] apply adversarial training between the feature extractor and the classifier. These techniques decouple the source and target domains during training, allowing the model to estimate the domain difference without direct access to the source data. However, under the UDA setting, the target labels remain inaccessible during training. As a result, UDA methods often rely heavily on the accuracy of prototype estimation and pseudo-label annotation for effective adaptation.
+2.2 Source-Free Unsupervised Domain Adaptation (SFUDA)
+Conventional UDA methods rely on supervision from the source domain during the adaptation process, which can be challenging to achieve in practical settings. As a result, source-free unsupervised domain adaptation (SFUDA) methods have gained significant attention, as they aim to adapt models to the target domain without accessing source domain data. From the DA perspective, works such as [Kundu et al., 2020a; Kundu et al., 2020b] have explored sourcefree universal DA [You et al., 2019] and open-set DA [Saito et al., 2018b]. SHOT [Liang et al., 2020a], the pioneering SFUDA method, primarily addresses closed-set DA and partial-set DA [Li et al., 2020]. To achieve SFUDA, certain methods [Qiu et al., 2021; Tian et al., 2021] focus on reconstructing a pseudo-source distribution in feature space based on the source hypothesis, enhancing generalization by aligning target domain samples with these pseudo-source samples. Another prominent stream of SFUDA methods [Liang et al., 2020a; Chen et al., 2022] concentrates on pseudo-label prediction from the source model or prototypes, adapting the model to the target domain and ensuring a better fit to the target domain distribution.
+2.3 Few-Shot Transfer Learning
+A wide array of studies focus on learning a metric space specifically for k-shot tasks, leveraging meta-learning to develop adaptation strategies [Pan and Yang, 2009]. These approaches, however, often require specialized network architectures, custom loss functions, and training strategies that depend on multiple source domains or joint training with both source and support data--conditions that are challenging to meet in real-world environments. Another commonly adopted strategy is model fine-tuning or weight transfer from
+
+a pre-trained source model. However, fine-tuning all source model weights on a limited support set with a small value of k typically leads to severe overfitting, necessitating a support set of at least k = 100 to achieve stability [Yosinski et al., 2014]. Recent advancements have been made in the SFFSDA setting. For example, LCCS [Zhang et al., 2022] utilizes a low-dimensional approximation of batch normalization (BN) statistics to drastically reduce the number of parameters required for adaptation, thereby improving the robustness of adaptation with limited support data. Additionally, [Lee et al., 2023] proposes that fine-tuning a source pretrained model using a few labeled target instances presents a more feasible solution to overcome the limitations inherent in SFUDA, and they successfully demonstrate the effectiveness of this approach. In contrary to prior works, our proposed ACT method can not only effectively tackle closed-set SFFSDA problem, but also tackle open-set and partial-set domain adaptation scenarios.
+3 Method
+3.1 Overall Idea
+First, let us describe our experimental setup. We denote the source model, pre-trained on the labeled source domain {XS, YS}, as S, where XS represents the source data and YS denotes the corresponding label information. Similarly, {XT , YT } represents the labeled target domain, consisting of target data and their associated labels. The objective of SFFSDA is to sample a support set {XSUP , YSUP } using the few-shot approach, specifically the N -way-K-shot setting, where N is the number of target domain classes and K is the number of samples drawn from each class. Using the labeled data {XSUP , YSUP } from the support set, we finetune the pre-trained source model S to learn a target model T . In the SFFSDA scenario, we cannot access the original source data (i.e., XS and YS), but we do have access to the parameters of the source model S. During domain adaptation, only the support set data {XSUP , YSUP } is available, and this data is used to fine-tune the pre-trained source model S .
+In contrast to existing SFFSDA method [Lee et al., 2023], which adapts source pre-trained models via fine-tuning the target support data, we propose a novel approach. We train a feature extractor network F , which is initially trained on the source inputs XS and later fine-tuned with the support inputs XSUP . Additionally, we employ two classifier networks C1 and C2, which use the features generated by F . Both classifiers map the features into K classes, outputting a Kdimensional vector. A softmax function is applied to these vectors to obtain class probabilities, denoted as p1(y|x) and p2(y|x), representing the probability outputs from classifiers C1 and C2, respectively.
+Unlike traditional SFUDA methods, SFFSDA allows access to target domain labels. Therefore, methods such as pseudo-labeling and self-training, commonly used in SFUDA, are not required. However, since the labeled target data in the support set is typically very limited due to the few-shot setting, the lack of data diversity can lead to overfitting. Addressing this issue is crucial to enhancing the effec-
+
+tiveness of SFFSDA methods. Given the source-free setting, where access to the source data is restricted, it is essential to establish a strong relationship between the pre-trained source model and the target model. Since our approach incorporates two classifiers, minimizing the discrepancy between the outputs of both classifiers is vital for the model's performance. Based on these principles, we have designed our method.
+3.2 Data Diversity
+Due to the few-shot setting, the support set used to fine-tune the pre-trained model typically contains limited data, leading to potential issues like overfitting and lack of diversity. To address these challenges and enhance data variety, we use a strong-weak data augmentation strategy inspired by contrastive learning. Specifically, we apply two augmentation methods, AS, AW : the weak augmentation AW , which involves basic transformations like random cropping and flipping, and the strong augmentation AS, which uses more complex techniques through AutoAugment [Cubuk et al., 2019], an automated method that optimizes augmentation strategies using search algorithms. AutoAugment combines 24 substrategies to identify the most effective augmentations for the dataset. These strategies generate synthetic data from groundtruth targets, which is particularly useful in few-shot settings. In this study, augmentations serve to enhance data diversity, thereby mitigating the risk of overfitting.
+For our experiments, we construct the support set adhering to the few-shot learning framework, specifically employing an N -way-K-shot setting. Unlike previous SFFSDA work [Lee et al., 2023], which relied on less rigorous datasplitting strategies, we have refined this process for greater scientific integrity. Rather than arbitrarily partitioning the target data, we systematically select samples from the entire target dataset to form the support set in accordance with fewshot principles. The remainder of the target data, not included in the support set, is designated as the test set, thereby eliminating the need for a separate validation set. This approach ensures that our experimental setup is both methodologically sound and aligned with the few-shot learning paradigm.
+By employing these augmentation strategies, we inject controlled randomness into the support set, effectively increasing the diversity and effective volume of the available data. Our refined data-splitting method ensures that the test set remains representative and diverse, while the support set benefits from a well-maintained level of randomness. This approach not only enhances the testing accuracy but also leads to improved model performance, ensuring robust evaluation and reliable outcomes.
+3.3 Model Structure
+Our proposed ACT model contains two modules, each comprising a feature extractor and two classifiers. In the sourcefree setting, the absence of labeled source domain samples during training requires an alternative approach to obtain pretrained source features. To achieve this, we first train a feature extractor Fsrc and two classifiers Csrc1 and Csrc2 on the source domain. The modules Fs, Cs1 , and Cs2 are then initialized with the parameters of Fsrc, Csrc1 , and Csrc2 , respectively, serving as a substitute for the unavailable labeled
+
+source data. These modules remain frozen during target do-
+main fine-tuning to retain the source pre-trained features. Our
+method aims to train the target model Ft, Ct1 , and Ct2 , they are also initialized by using the parameters of Fsrc, Csrc1 , and Csrc2 , by using a support set sampled from the target domain. Figure 2 illustrates the model architecture.
+
+Support Set
+
+few shot
+Target Domain
+
+Computational flow of source initial model
+
+Computational flow of target model
+
+Feature Extractor
+
+Classifier Prediction vector
+
+Figure 2: Overview of the ACT model structure and objective functions.
+
+3.4 Training Steps and Loss Functions
+For pre-training on the source domain, we adopt the approach used in SHOT [Liang et al., 2020a] to thoroughly capture the semantic information embedded in the source data. For fine-tuning in the target domain, as outlined in the above section, our objective is to ensure that the main target classifiers Ct1 can correctly classify the target data. This objective is achieved through a two-step process. Step 1: In the first step, we simultaneously train both the classifiers and the feature extractor. Since the support set in the few-shot setting is labeled, we can utilize the ground-truth labels directly, unlike traditional SFUDA methods that rely on pseudo-labels. To enable the feature extractor and classifiers to learn task-specific discriminative features, we minimize the label smoothing cross-entropy (LSCE) loss function during training.
+
+Llsce1 = Ltltar(Gt1 ; Xt, Yt) =
+
+-E(xt ,yt )Xt ×Yt
+
+K k=1
+
+qklt
+
+log
+
+k (Gt1
+
+(xt))
+
+Llsce2 = Ltltar(Gt2 ; Xt, Yt) =
+
+-E(xt ,yt )Xt ×Yt
+
+K k=1
+
+qklt
+
+log
+
+k (Gt2
+
+(xt))
+
+(1)
+
+where (Xt, Yt) denotes support set and (xt, yt) denotes la-
+
+beled data in support set. qklt = (1 - )qk + /K is the
+
+smoothed label and  is the smoothing parameter. k(a) =
+
+exp(ak ) i exp(ai)
+
+denotes
+
+the
+
+k-th
+
+element
+
+in
+
+the
+
+soft-max
+
+output
+
+of
+
+a K-dimensional vector a. Gt1 , Gt2 denotes two branches of
+
+the target module of ACT, where Gti = Ft + Cti , i = 1, 2.
+
+Optimizing the label smoothing cross-entropy loss function
+
+enhances the discriminability of the model and aids in align-
+
+ing the target data more effectively by fully leveraging the
+semantic information present in the target domain.
+Next, to enable the adapted model fit the target-specific
+structures well, we minimize the entropy of class-conditional distribution rjt(xti) = p(yit = j|xit; Gt) on target domain data (Xt, Yt) as
+
+1 Le1 = nt
+1 Le2 = nt
+
+nt i=1
+
+H
+
+(Gt1
+
+(xit))
+
+nt i=1
+
+H
+
+(Gt2
+
+(xit))
+
+(2)
+
+where H(·) denotes the entropy function of class-conditional
+
+distribution of two branches Gtk (xti), k = 1, 2 defined as
+
+H(Gtk (xit)) = -
+
+c j=1
+
+rjtk
+
+(xti )
+
+log(rjtk
+
+(xit)
+
++
+
+),
+
+c
+
+is
+
+the
+
+number of classes, and rjtk (xit) is the probability of predict-
+
+ing point xti to class j for classifier k,  denotes a small pa-
+
+rameter to avoid the situation that rjtk (xit) = 0.
+
+By applying entropy minimization, the two target classi-
+
+fiers, ct1 (x) and ct2 (x), are effectively aligned with the labeled support data and guided through the low-density re-
+
+gions of the target domain. This process helps the target
+
+model better capture and fit the underlying structures of the
+
+target data.
+
+Then, to minimize the discrepancy between source model
+
+output and adapted target model output, we train classifiers
+
+and feature extractor by minimizing the reverse cross-entropy
+
+loss function (RCE loss function):
+
+Lrce1 = -
+
+K k=1
+
+p1
+
+(k|xit
+
+)
+
+log(q1 (k|xti )
+
++
+
+)
+
+(3)
+
+Lrce2 = -
+
+K k=1
+
+p2
+
+(k|xit
+
+)
+
+log(q2(k|xit)
+
++
+
+)
+
+where xit denotes labeled support set data and q1(k|xti), q2(k|xit) denotes the outputs of the duplicate source classifiers Cs1 , Cs2 , respectively. p1(k|xit), p2(k|xit) denote the outputs of target classifiers Ct1 , Ct2 , respectively.  denotes a small parameter to avoid the situation that q(k|xti) = 0.
+The RCE loss function is typically employed in scenar-
+
+ios with label noise, as it helps mitigate overfitting caused
+
+by noisy labels. In the few-shot setting, the support set con-
+
+tains only a small amount of ground-truth labeled data, which
+
+can lead to overfitting due to the limited labeled data avail-
+
+ability. Furthermore, since we apply data augmentation to
+
+increase the data diversity, the augmented data may not per-
+
+fectly align with the original ground-truth labels. By opti-
+
+mizing the RCE loss function, we not only prevent model
+
+collapse during training but also reduce overfitting in the sup-
+
+port set by focusing on maintaining consistency between the
+
+data and labels. We combine the introduced objective func-
+
+tions to define the overall objective function of step A:
+
+min
+Ft,Ct1 ,Ct2
+
+lsce(Llsce1
+
++
+
+Llsce2 )
+
++
+
+e(Le1
+
++
+
+Le2 )
+
+(4)
+
++rce(Lrce1 + Lrce2 )
+
+where lsce, e and rce are hyperparameters that trader-off different objective functions.
+Step 2 In the second step, we train the classifiers (Ct1 , Ct2 ) while keeping the feature extractor Ft fixed. The objective
+
+is to train the two distinct classifiers on the target domain to learn transferable features and establish a discriminative decision boundary specific to the target domain. To accomplish this, we employ the classifier determinacy disparity (CDD) distance, which measures the consistency and confidence of the outputs from both classifiers.
+
+K
+
+K
+
+K
+
+(p1, p2) =
+
+Amn - Amm =
+
+Amn (5)
+
+m,n=1
+
+m=1
+
+m= n
+
+where p1, p2  RK×1 denotes the softmax probabilities of the outputs of the two classifiers and they need to satisfy:
+
+K
+pkj = 1, s.t. pkj  0, k = 1, · · · , K, j = 1, 2 (6)
+k=1
+A denotes a square matrix called Bi-classifier Prediction Relevance Matrix and A = p1p2  RK×K .
+The matrix A effectively assesses the predictive correlation between the two classifiers across different categories. To minimize the disparity in their prediction correlations, we aim to make the predictions from both classifiers consistent and well-aligned. This is achieved by maximizing the diagonal elements of A, ensuring that the predicted class is assigned with high confidence. At the same time, the off-diagonal elements of A capture fine-grained confusion between the two classifiers. As a result, the CDD distance encapsulates all probabilities of inconsistency between the classifiers' predictions, serving as a comprehensive measure of the differences in their outputs.
+We train the two classifiers on the target domain by maximizing CDD:
+
+Lcdd
+
+=
+
+1 nt
+
+nt
+Lcdd(xit)
+i=1
+
+=
+
+1 nt
+
+nt
+(p1i, p2i)
+i=1
+
+(7)
+
+where p1i, p2i denotes the softmax outputs of Ct1 , Ct2 for target sample xti.
+We combine the introduced objective functions of the first
+step and introduced CDD distance in the second step to define
+the overall objective function of the second step:
+
+min
+Ct1 ,Ct2
+
+lsce(Llsce1
+
++
+
+Llsce2 )
+
++
+
+e(Le1
+
++
+
+Le2 )
+
+(8)
+
++rce(Lrce1 + Lrce2 ) - cddLcdd
+
+where lsce, e and rce are hyperparameters introduced in the first step and cdd is hyperparameter that trade-off CDD distance. By optimizing this function, we can not only maintain the advantages of the first step, but also reduce the difference between the outputs of two classifiers. Both steps will be iteratively performed in our method. Optimizer Traditional SFUDA methods typically rely on the SGD optimizer. In contrast, our approach employs a more advanced optimization technique known as Sharpness-Aware Minimization (SAM) [Foret et al., 2020; Kwon et al., 2021]. In essence, SAM performs a two-step optimization process, resetting the gradient to zero after each step. While this twostep approach slightly increases the training time, it significantly enhances the model's accuracy. In our experiments,
+
+we combined the SAM optimization method with the Adam optimizer, which yielded improved accuracy compared to the conventional SGD optimizer.
+4 Experiments
+In our experiments, we compare our ACT method with stateof-the-art SFUDA methods, as research on SFFSDA remains limited. Traditional SFUDA methods, such as [Liang et al., 2020a; Qiu et al., 2021], train the entire model on the labeled source domain, freezing certain components during adaptation to the target domain. Our approach utilizes a single base network and two classifiers. We believe the SFFSDA setting is more practical than the SFUDA setting as collecting limited amounts of labeled target data is more feasible than collecting large amounts of unlabeled target data. Given the fewshot setting, the support set often contains a limited amount of target data, resulting in insufficient semantic information. To address this limitation, we train the entire model on the labeled source domain and then fine-tune it on the labeled support set. Our proposed ACT method enables maximizing the utility of the semantic information contained in the support set.
+4.1 Setup
+Datasets. We evaluate our method on four domain adaptation benchmarks to demonstrate its versatility. Office31 [Saenko et al., 2010] is a small benchmark with three domains: Amazon (A), DSLR (D), and Webcam (W), comprising 31 object categories in office environments. OfficeHome [Venkateswara et al., 2017] is a medium-sized benchmark with four domains: Art (Ar), Clipart (Cl), Product (Pr), and Real World (Rw), featuring 65 object categories. VisDA-C [Peng et al., 2017] is a large benchmark focused on synthesis-to-real object recognition, with 12 categories. The source domain includes 152,000 synthetic images, while the target domain contains 55,000 real-world images from the Microsoft COCO dataset. TerraIncognita (Terra)[Beery et al., 2018] contains wild animal images from four locations (L38, L43, L46, L100) across 10 categories. In the few-shot setting, cat and bird categories are often excluded due to limited samples.
+We conduct single-source  single-target domain adaptation, averaging performance across all source  target pairs. To ensure reliability, we use three independently pre-trained source models (three different seeds) and a fixed seed for domain adaptation, enabling comparison with FT [Lee et al., 2023]. Few-shot sample selection in the target domain is analyzed in the Appendix.
+Baseline Method We compare our ACT method with six SFUDA methods to demonstrate its effectiveness. The involved baselines are: SHOT [Liang et al., 2020a], SHOT++[Liang et al., 2021], AaD[Yang et al., 2022], GSFDA [Yang et al., 2021b], NRC [Yang et al., 2021a], and CoWA-JMDS [Lee et al., 2022]. To ensure consistency, we take the convenience to reference results from [Lee et al., 2023], which utilized a fixed random seed­a practice that mirrors our experimental setup­rather than citing outcomes from
+
+the original papers that were based on averages across three random runs.
+4.2 Implementation Details
+Network architecture. We adopt the network designs proposed by [Liang et al., 2020a], a protocol widely embraced in SFUDA methods. Our architecture features a two branch design, wherein each branch integrates a backbone network along with two classifiers. In line with previous work [Liang et al., 2020a; Liang et al., 2021; Yang et al., 2021b; Yang et al., 2021a; Lee et al., 2022], we employ ResNet-101 as the backbone for the VisDA-C dataset and opt for ResNet-50 across other benchmarks. Both backbone networks are pretrained on ImageNet [Deng et al., 2009].
+Network hyper-parameters. For the source domain pretraining, the entire network is trained via back-propagation. For Office31 and OfficeHome, the learning rate is set to 0 = 1 × e-3 for the backbone network and 10 × 0 for the classifiers. For VisDA-C and Terra, 0 = 1 × e-3 is applied to both. The pre-training process uses mini-batch SGD with a momentum of 0.9, weight decay of 5×e-4, and batch sizes of 32 (Office31 and OfficeHome) and 128 (VisDA-C and Terra).
+For the target domain fine-tuning, we employ the Adam optimizer with SAM. Batch sizes are set to 32 (Office31 and OfficeHome), 64 (VisDA-C), and 128 (Terra). The fine-tuning process uses 30,000 iterations, calculated as the product of the support set size and maximum epochs. For Office31, the learning rate is 0 = 3×e-5 for the base network and 10/3× 0 for the classifiers. Both learning rates follow the scheduler  = 0 × (1 + 10p)-0.75 [Ganin and Lempitsky, 2015; Long et al., 2018], where p represents the training progress (0­1). For VisDA-C and Terra, we maintain the same learning rates as those utilized for Office31, with the learning rate scheduler being applied exclusively to the classifiers. For OfficeHome, a constant learning rate of 0 = 1 × e-5 is applied on the base network and classifiers without a scheduler.
+4.3 Comparison with SFUDA Methods
+Firstly, we conduct a comparative analysis of our ACT method against several established SFUDA approaches. In our evaluation, we report the per-class average accuracy for the VisDA-C dataset and the overall average accuracy for other benchmarks. Within our SFFSDA setting, we employ 1, 3, 5, and 10 shots across all benchmarks with the exception of VisDA-C. Given its substantially larger scale, for VisDAC, we increase the shot counts to 10, 20, 30, and 50 in our experiments.
+As illustrated in Table 1, our method achieves superior performance relative to SFUDA approaches, even when utilizing only a limited amount of labeled data. Notably, for Terra, our method significantly outperforms all SFUDA methods across all few-shot settings. This exceptional performance is attributed to our ACT approach's effectiveness in mitigating the long-tail problem induced by uneven class distributions and ensuring balanced class representation through fewshot sampling. The label distribution for Terra is detailed in the Appendix. For VisDA-C, our method requires a 50shot setting to match the competitive performance achieved
+
+Method
+
+No adapt SHOT SHOT++ AaD CoWA-JMDS NRC G-SFDA
+
+1 (10)
+
+ACT
+
+3 (20) 5 (30)
+
+10 (50)
+
+Office31
+77.63 87.79 88.91 88.71 90.20 88.59 86.99
+85.80 91.27 92.58 N/A
+
+OfficeHome
+59.26 69.90 70.57 70.71 72.07 70.25 69.22
+64.90 72.19 75.75 81.62
+
+VisDA-C
+47.78 81.77 86.84 86.68 86.06 85.31 84.72
+81.78 84.18 84.95 86.44
+
+Terra
+29.18 25.72 27.07 22.62 28.60 26.35 31.01
+52.56 55.75 61.13 N/A
+
+Table 1: Classification accuracies (%) of SFUDA and ACT methods. The 10-shot setting is not considered in Office31 and Terra as some categories in these datasets have less than 10 images. Underline indicates the best performance among SFUDA methods. Bold indicates the ACT's performance surpassing the SFUDA baselines.
+
+by SFUDA baselines. In large-scale datasets such as VisDAC, the number of labeled target instances used by our method is considerably smaller compared to the unlabeled data leveraged by SFUDA techniques. Specifically, 50 shots for 12 categories constitute a support set that amounts to approximately 1.08% of the target domain data volume for VisDAC. Although our ACT method does not surpass some SFUDA baselines on VisDA-C, it offers substantial resource savings during training by requiring only a limited amount of target data. Importantly, the 50-shot setting with our ACT method can yield competitive results with SHOT++, suggesting that a slight increase in data could lead to even better outcomes. Moreover, the performance gains observed in the 1-shot (or 10-shot for VisDA-C) settings markedly enhance the source pre-trained model's efficacy ("No adapt") across all datasets. These findings underscore that our ACT method not only addresses the long-tail distribution challenge commonly encountered in real-world applications but also delivers performance that rivals or exceeds that of SFUDA methods, while being more efficient in terms of data usage.
+4.4 Comparison with Transfer Learning Methods
+To substantiate the efficacy of transferring pre-trained source features to the target domain with minimal labeled data, we conduct a comparative analysis between our ACT method and several established transfer learning techniques in few-shot settings. A number of transfer learning methods have been proposed for few-shot scenarios, including L2-SP [Xuhong et al., 2018], DELTA [Li et al., 2019], BSS [Chen et al., 2019], and LCCS [Zhang et al., 2022]. To underscore the effectiveness of our ACT approach, we benchmark it against these methodologies on the Office31 and OfficeHome datasets, both under few-shot conditions. As summarized in Table 2, our method consistently outperforms the baseline transfer learning methods across all six evaluated settings. This superior performance not only highlights the advantage of our ACT method in few-shot scenarios but also underscores its capability to effectively leverage limited labeled data for successful domain adaptation. The results affirm that our ACT method represents a significant advance-
+
+L2-SP DELTA BSS LCCS
+ACT
+
+Office31 1-shot 3-shot 5-shot
+
+82.99 83.41 82.87 79.16
+
+87.43 87.66 87.26 85.75
+
+90.20 90.55 90.26 89.17
+
+85.80 91.27 92.58
+
+OfficeHome 1-shot 3-shot 5-shot
+
+64.00 64.50 63.91 60.53
+
+70.13 70.19 70.20 65.54
+
+73.34 72.93 73.29 68.18
+
+64.90 72.19 75.75
+
+Table 2: Classification accuracies (%) for comparisons with transfer learning methods. Bold denotes the best performance for each fewshot setting.
+
+Method
+
+1 (10)
+
+FT
+
+3 (20) 5 (30)
+
+10 (50)
+
+LT-FT
+
+1 (10) 3 (20) 5 (30) 10 (50)
+
+1 (10)
+
+ACT
+
+3 (20) 5 (30)
+
+10 (50)
+
+Office31
+82.88 87.55 90.07 N/A
+82.85 88.93 90.93 N/A
+85.80 91.27 92.58 N/A
+
+OfficeHome
+64.45 70.38 73.37 76.99
+63.63 71.94 74.55 78.58
+64.90 72.19 75.75 81.62
+
+VisDA-C
+81.20 83.31 84.28 85.93
+81.24 83.53 84.82 86.17
+81.78 84.18 84.95 86.44
+
+Terra
+39.17 48.44 54.61 N/A
+40.96 48.98 55.40 N/A
+52.56 55.75 61.13 N/A
+
+Table 3: Classification accuracies (%) of FT, LP-FT, and ACT methods on Office31, OfficeHome, VisDA-C, and Terra datasets. Bold denotes the best performance for each few-shot setting.
+
+ment over traditional transfer learning approaches in this context.
+
+4.5 Comparison with SFFSDA Method
+Given that the SFFSDA setting is a nascent and emerging area, there has been limited exploration within this field. To date, only [Lee et al., 2023] have conducted a preliminary investigation into SFFSDA, applying both fine-tuning (FT) and linear-probing fine-tuning (LP-FT) methods in this context. To provide deeper insights SFFSDA, we compare our ACT method against FT and LP-FT across all four benchmarks. As demonstrated in Table 3, our ACT method achieves superior performance across all few-shot settings, outperforming both FT and LP-FT approaches. Notably, on label-imbalanced datasets such as Office31 and Terra, our ACT method exhibits a more pronounced advantage over FT and LP-FT, highlighting its efficacy in addressing the long-tail distribution challenge. Furthermore, we have extended our experimental scope to two specialized DA scenarios: partial-set DA and open-set DA. The detailed findings from these extensive experiments are provided in the Appendix.
+4.6 Ablation Study
+We perform a 1-shot ablation study on the Office31 benchmark to isolate and evaluate the contributions of key components within our method: CDD distance, source model matching, strong-weak augmentation, SAM optimization,
+
+cdd distance
+
+   
+
+source model matching
+ 
+  
+
+strong weak augmentation
+  
+ 
+
+SAM optimization
+   
+
+
+label smooth cross entropy
+    
+
+Acc (%)
+79.15 79.08 78.87 78.48 78.23 76.70
+
+Table 4: Ablation study results on Office31 dataset in 1-shot setting.
+
+and label-smooth cross-entropy. The findings are summarized in Table 4. Given the high degree of similarity between the Webcam (W) and DSLR (D) domains, we have omitted the results for D  W and W  D to focus more clearly on the impact of each individual component. As illustrated in Table 4, it is evident that each element plays a crucial role in enhancing model performance on the target domain.
+· CDD Distance: Removing this component leads to a decrease in accuracy to 79.08%, demonstrating the benefit of classifier matching in improving overall performance.
+· Source Model Matching: Omission of this component reduces accuracy to 78.87%, highlighting the importance of retaining source model parameters in sourcefree settings.
+· Strong-Weak Paradigm: Eliminating this component lowers accuracy to 78.48%, underscoring its effectiveness in improving data quality.
+· SAM Optimization: Excluding this component results in an accuracy drop to 78.23(%), illustrating its role in enhancing the training process and optimizing over two stages.
+· Label-Smooth Cross-Entropy: Removing this component reduces performance to 76.70%, indicating its contribution to enhancing the model's robustness when label information is available.
+5 Conclusion
+In this work, we introduce the SFFSDA setting and propose the ACT method. To augment data diversity within the limited support set characteristic of few-shot learning, we have implemented a strong-weak augmentation paradigm, not only mitigating overfitting but also facilitating robust adaptation by using a minimal amount of labeled support data. Our ACT method is built on a two-step training process that integrates multiple loss functions, including label smoothing cross-entropy and classifier determinacy disparity. These losses enhance the discriminative power of the model while minimizing the discrepancy between the outputs of two classifiers. Furthermore, we employ SAM as our optimization strategy, which significantly contributes to the overall performance enhancement. The proposed framework enables effective adaptation of source models with as few as one sample per class, achieving results that are competitive with traditional SFUDA methods while overcoming their limitations. Our method demonstrates compelling performance
+
+across several DA benchmarks. Importantly, since acquiring a small amount of labeled target data is more practical than obtaining large volumes of unlabeled data in real-world applications, our ACT method presents a viable alternative to SFUDA approaches. Moreover, our study highlights the potential for further advancements in SFFSDA through the exploration of additional regularization techniques.
+References
+[Beery et al., 2018] Sara Beery, Grant Van Horn, and Pietro Perona. Recognition in terra incognita. ECCV, 2018.
+[Ben-David et al., 2010] Shai Ben-David, John Blitzer, Koby Crammer, Alex Kulesza, Fernando Pereira, and Jennifer Wortman Vaughan. A theory of learning from different domains. Machine learning, 79:151­175, 2010.
+[Bendale and Boult, 2016] Abhijit Bendale and Terrance E Boult. Towards open set deep networks. CVPR, 2016.
+[Buda et al., 2018] Mateusz Buda, Atsuto Maki, and Maciej A Mazurowski. A systematic study of the class imbalance problem in convolutional neural networks. Neural networks, 106:249­259, 2018.
+[Cao et al., 2018] Zhangjie Cao, Mingsheng Long, Jianmin Wang, and Michael I Jordan. Partial transfer learning with selective adversarial networks. CVPR, 2018.
+[Cao et al., 2019] Zhangjie Cao, Kaichao You, Mingsheng Long, Jianmin Wang, and Qiang Yang. Learning to transfer examples for partial domain adaptation. CVPR, 2019.
+[Chen et al., 2019] Xinyang Chen, Sinan Wang, Bo Fu, Mingsheng Long, and Jianmin Wang. Catastrophic forgetting meets negative transfer: Batch spectral shrinkage for safe transfer learning. NeurIPS, 2019.
+[Chen et al., 2020] Zhihong Chen, Chao Chen, Zhaowei Cheng, Boyuan Jiang, Ke Fang, and Xinyu Jin. Selective transfer with reinforced transfer network for partial domain adaptation. CVPR, 2020.
+[Chen et al., 2022] Weijie Chen, Luojun Lin, Shicai Yang, Di Xie, Shiliang Pu, and Yueting Zhuang. Self-supervised noisy label learning for source-free unsupervised domain adaptation. TROS, 2022.
+[Cubuk et al., 2019] Ekin D Cubuk, Barret Zoph, Dandelion Mane, Vijay Vasudevan, and Quoc V Le. Autoaugment: Learning augmentation strategies from data. CVPR, 2019.
+[Deng et al., 2009] Jia Deng, Wei Dong, Richard Socher, LiJia Li, Kai Li, and Li Fei-Fei. Imagenet: A large-scale hierarchical image database. CVPR, 2009.
+[Du et al., 2021] Zhekai Du, Jingjing Li, Hongzu Su, Lei Zhu, and Ke Lu. Cross-domain gradient discrepancy minimization for unsupervised domain adaptation. CVPR, 2021.
+[Fang et al., 2022] Yuqi Fang, Pew-Thian Yap, Weili Lin, Hongtu Zhu, and Mingxia Liu. Source-free unsupervised domain adaptation: A survey. arXiv, 2022.
+
+[Foret et al., 2020] Pierre Foret, Ariel Kleiner, Hossein Mobahi, and Behnam Neyshabur. Sharpness-aware minimization for efficiently improving generalization. arXiv, 2020.
+[Ganin and Lempitsky, 2015] Yaroslav Ganin and Victor Lempitsky. Unsupervised domain adaptation by backpropagation. ICML, 2015.
+[Goodfellow, 2016] Ian Goodfellow. Deep Learning. MIT Press, 2016.
+[He et al., 2016] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. CVPR, 2016.
+[Kundu et al., 2020a] Jogendra Nath Kundu, Naveen Venkat, R Venkatesh Babu, et al. Universal source-free domain adaptation. CVPR, 2020.
+[Kundu et al., 2020b] Jogendra Nath Kundu, Naveen Venkat, Ambareesh Revanur, R Venkatesh Babu, et al. Towards inheritable models for open-set domain adaptation. CVPR, 2020.
+[Kwon et al., 2021] Jungmin Kwon, Jeongseop Kim, Hyunseo Park, and In Kwon Choi. Asam: Adaptive sharpnessaware minimization for scale-invariant learning of deep neural networks. ICML, 2021.
+[Lee et al., 2022] Jonghyun Lee, Dahuin Jung, Junho Yim, and Sungroh Yoon. Confidence score for source-free unsupervised domain adaptation. ICML, 2022.
+[Lee et al., 2023] Suho Lee, Seungwon Seo, Jihyo Kim, Yejin Lee, and Sangheum Hwang. Few-shot fine-tuning is all you need for source-free domain adaptation. arXiv, 2023.
+[Li et al., 2019] Xingjian Li, Haoyi Xiong, Hanchao Wang, Yuxuan Rao, Liping Liu, Zeyu Chen, and Jun Huan. Delta: Deep learning transfer using feature map with attention for convolutional networks. arXiv, 2019.
+[Li et al., 2020] Shuang Li, Chi Harold Liu, Qiuxia Lin, Qi Wen, Limin Su, Gao Huang, and Zhengming Ding. Deep residual correction network for partial domain adaptation. IEEE transactions on pattern analysis and machine intelligence, 43(7):2329­2344, 2020.
+[Li et al., 2021] Shuang Li, Fangrui Lv, Binhui Xie, Chi Harold Liu, Jian Liang, and Chen Qin. Bi-classifier determinacy maximization for unsupervised domain adaptation. AAAI, 2021.
+[Li et al., 2024] Jingjing Li, Zhiqi Yu, Zhekai Du, Lei Zhu, and Heng Tao Shen. A comprehensive survey on sourcefree domain adaptation. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2024.
+[Liang et al., 2020a] Jian Liang, Dapeng Hu, and Jiashi Feng. Do we really need to access the source data? source hypothesis transfer for unsupervised domain adaptation. ICML, 2020.
+[Liang et al., 2020b] Jian Liang, Yunbo Wang, Dapeng Hu, Ran He, and Jiashi Feng. A balanced and uncertaintyaware approach for partial domain adaptation. ECCV, 2020.
+
+[Liang et al., 2021] Jian Liang, Dapeng Hu, Yunbo Wang, Ran He, and Jiashi Feng. Source data-absent unsupervised domain adaptation through hypothesis transfer and labeling transfer. IEEE Transactions on Pattern Analysis and Machine Intelligence, 44(11):8602­8617, 2021.
+[Liu et al., 2019] Hong Liu, Zhangjie Cao, Mingsheng Long, Jianmin Wang, and Qiang Yang. Separate to adapt: Open set domain adaptation via progressive separation. CVPR, 2019.
+[Long et al., 2015] Mingsheng Long, Yue Cao, Jianmin Wang, and Michael Jordan. Learning transferable features with deep adaptation networks. ICML, 2015.
+[Long et al., 2018] Mingsheng Long, Zhangjie Cao, Jianmin Wang, and Michael I Jordan. Conditional adversarial domain adaptation. NeurIPS, 2018.
+[Pan and Yang, 2009] Sinno Jialin Pan and Qiang Yang. A survey on transfer learning. IEEE Transactions on knowledge and data engineering, 22(10):1345­1359, 2009.
+[Panareda Busto and Gall, 2017] Pau Panareda Busto and Juergen Gall. Open set domain adaptation. ICCV, 2017.
+[Peng et al., 2017] Xingchao Peng, Ben Usman, Neela Kaushik, Judy Hoffman, Dequan Wang, and Kate Saenko. Visda: The visual domain adaptation challenge. arXiv, 2017.
+[Qiu et al., 2021] Zhen Qiu, Yifan Zhang, Hongbin Lin, Shuaicheng Niu, Yanxia Liu, Qing Du, and Mingkui Tan. Source-free domain adaptation via avatar prototype generation and adaptation. arXiv, 2021.
+[Ren et al., 2020] Chuan-Xian Ren, Pengfei Ge, Peiyi Yang, and Shuicheng Yan. Learning target-domain-specific classifier for partial domain adaptation. IEEE Transactions on Neural Networks and Learning Systems, 32(5):1989­ 2001, 2020.
+[Saenko et al., 2010] Kate Saenko, Brian Kulis, Mario Fritz, and Trevor Darrell. Adapting visual category models to new domains. ECCV, 2010.
+[Saito et al., 2018a] Kuniaki Saito, Kohei Watanabe, Yoshitaka Ushiku, and Tatsuya Harada. Maximum classifier discrepancy for unsupervised domain adaptation. CVPR, 2018.
+[Saito et al., 2018b] Kuniaki Saito, Shohei Yamamoto, Yoshitaka Ushiku, and Tatsuya Harada. Open set domain adaptation by backpropagation. ECCV, 2018.
+[Sun et al., 2016] Baochen Sun, Jiashi Feng, and Kate Saenko. Return of frustratingly easy domain adaptation. AAAI, 2016.
+[Tian et al., 2021] Jiayi Tian, Jing Zhang, Wen Li, and Dong Xu. Vdm-da: Virtual domain modeling for source datafree domain adaptation. IEEE Transactions on Circuits and Systems for Video Technology, 32(6):3749­3760, 2021.
+[Tzeng et al., 2014] Eric Tzeng, Judy Hoffman, Ning Zhang, Kate Saenko, and Trevor Darrell. Deep domain confusion: Maximizing for domain invariance. arXiv, 2014.
+
+[Venkateswara et al., 2017] Hemanth Venkateswara, Jose Eusebio, Shayok Chakraborty, and Sethuraman Panchanathan. Deep hashing network for unsupervised domain adaptation. CVPR, 2017.
+[Wu et al., 2020] Yuan Wu, Diana Inkpen, and Ahmed ElRoby. Dual mixup regularized learning for adversarial domain adaptation. In Computer Vision­ECCV 2020: 16th European Conference, Glasgow, UK, August 23­28, 2020, Proceedings, Part XXIX 16, pages 540­555. Springer, 2020.
+[Xu et al., 2019] Ruijia Xu, Guanbin Li, Jihan Yang, and Liang Lin. Larger norm more transferable: An adaptive feature norm approach for unsupervised domain adaptation. ICCV, 2019.
+[Xuhong et al., 2018] LI Xuhong, Yves Grandvalet, and Franck Davoine. Explicit inductive bias for transfer learning with convolutional networks. ICML, 2018.
+[Yang et al., 2021a] Shiqi Yang, Joost van de Weijer, Luis Herranz, Shangling Jui, et al. Exploiting the intrinsic neighborhood structure for source-free domain adaptation. NeurIPS, 2021.
+[Yang et al., 2021b] Shiqi Yang, Yaxing Wang, Joost Van De Weijer, Luis Herranz, and Shangling Jui. Generalized source-free domain adaptation. ICCV, 2021.
+[Yang et al., 2022] Shiqi Yang, Shangling Jui, Joost van de Weijer, et al. Attracting and dispersing: A simple approach for source-free domain adaptation. NeurIPS, 2022.
+[Yosinski et al., 2014] Jason Yosinski, Jeff Clune, Yoshua Bengio, and Hod Lipson. How transferable are features in deep neural networks? NeurIPS, 2014.
+[You et al., 2019] Kaichao You, Mingsheng Long, Zhangjie Cao, Jianmin Wang, and Michael I Jordan. Universal domain adaptation. CVPR, 2019.
+[Zhang et al., 2018] Jing Zhang, Zewei Ding, Wanqing Li, and Philip Ogunbona. Importance weighted adversarial nets for partial domain adaptation. CVPR, 2018.
+[Zhang et al., 2022] Wenyu Zhang, Li Shen, Wanyue Zhang, and Chuan-Sheng Foo. Few-shot adaptation of pre-trained networks for domain shift. IJCAI, 2022.
+A Additional Results for Special Domain Adaptation Tasks
+Traditionally, domain adaptation (DA) research has extensively focused on closed-set scenarios [Saenko et al., 2010], where the source and target domains share an identical label space. As DA research has progressed, two specialized settings have emerged to address more complex real-world challenges: open-set domain adaptation (ODA) [Panareda Busto and Gall, 2017] and partial-set domain adaptation [Cao et al., 2018]. In ODA, the target domain includes classes that are unseen during the training phase on the source domain, thereby requiring models to distinguish between known and unknown classes. Conversely, in PDA, the source domain's label space is broader than that of the target domain, necessitating methods that can effectively ignore extraneous
+
+classes present in the source but absent in the target domain. These advancements reflect a growing recognition of the need for DA techniques that can handle diverse and evolving label spaces, moving beyond the limitations of the traditional closed-set assumption.
+For the PDA setting, we followed the protocol outlined in [Liang et al., 2021] using the OfficeHome dataset. Specifically, 25 classes (the first 25 alphabetically) out of 65 target domain classes were used. For the ODA setting, we adhered to the protocol in [Liang et al., 2020a], where the source domain contains 25 classes (the first 25 alphabetically), while the target domain includes all 65 classes, with some unknown samples. The empirical results of these experiments are presented in Table 5, where we compare our method against state-of-the-art techniques on the OfficeHome dataset under the 3-shot setting.
+To understand why our method performs effectively in ODA and PDA scenarios, we begin by referencing SHOT [Liang et al., 2021], the first SFUDA method. In PDA scenarios, SHOT utilizes self-supervised pseudo-labeling. Within this framework, although K centroids are typically required, small or insignificant centroids should be treated as empty, akin to the approach used in k-means clustering. Specifically, SHOT discards centroids smaller than a predefined threshold Tc. In our FSSFDA setting, since we have access to the target labels, we can better adapt to the sparse target distribution, even though the target domain includes only a subset of the classes present in the source domain. So our method can work better than the traditional SFUDA method in the PDA scenario.
+In the ODA setting, the target domain contains unknown classes that are absent in the source domain. To address this problem, in SHOT, the classifier layer remains unchanged, and a confidence thresholding strategy is employed to reject unknown samples during the learning process. Uncertainty is quantified using the entropy of the network output, normalized to the range [0,1], and is subsequently utilized for twoclass k-means clustering in each epoch. Samples belonging to the cluster with higher uncertainty are treated as unknown and are excluded from target centroid updates and objective computations. In our ACT method, first, as we have access to target labels, we can ensure that the selected samples are sufficiently confident. Second, our approach computes the reverse cross-entropy loss between the source model's output and the adapted target model's output, thereby establishing a stronger relationship between the target and source domains. Consequently, our method outperforms traditional SFUDA methods in the ODA setting.
+A.1 Results of object recognition for PDA
+Compared to previous SFUDA methods, our approach achieves the highest average accuracy on the OfficeHome datasets. Specifically, our method surpasses the topperforming method, SHOT++, by 2.68% in terms of average accuracy.
+A.2 Results of object recognition for ODA
+Compared with state-of-the-art SFUDA methods, our method obtains the best average accuracy on the OfficeHome
+
+datasets. Besides, our method outperforms the best method SHOT 1.51% in terms of average accuracy.
+In summary, the results presented in Table 5 demonstrate that our method is both effective and competitive across these two challenging settings.
+B Label Distributions of Datasets
+Figure 3 illustrates the label distribution for each domain across the three benchmarks used in this study. Office31, one of the most widely used benchmarks in the SFUDA literature, exhibits relatively balanced label distributions across all domains. In contrast, the Terra datasets show significant shifts in label distributions.
+(a) VisDA-C
+(b) Terra
+(c) Office31
+Figure 3: The label distributions of the three benchmarks: VisDA-C, Terra, and Office31. In each histogram, the x-axes and y-axes represent the class index and the proportion of this class in the domain, respectively
+C Qualitative Results of Experiments
+We present several qualitative results using t-SNE [?] visualizations on the OfficeHome dataset in four source  target tasks: Ar  Cl, Cl  Ar, Pr  Ar and Rw  Cl. The analysis includes the source pre-trained model both before and after adaptation to the target domain with 10-shot samples. As shown in Figure 4 and Figure 5, the source pre-trained model, without target data adaptation, struggles to effectively distinguish between target data, indicating poor classification performance on the target domain. However, after adaptation, the target model significantly improves in its ability to discriminate between target data, demonstrating that our method enhances the discriminative power of the adapted model.
+
+Partial-set DA (SourceTarget)
+ResNet-50 [He et al., 2016] IWAN [Zhang et al., 2018] SAN [Cao et al., 2018] ETN [Cao et al., 2019] SAFN [Xu et al., 2019] DRCN [Li et al., 2020] RTNetadv [Chen et al., 2020] BA3US [Liang et al., 2020b] TSCDA [Ren et al., 2020]
+SHOT-IM [Liang et al., 2020a] SHOT [Liang et al., 2020a] SHOT-IM++ [Liang et al., 2021] SHOT++ [Liang et al., 2021]
+ACT
+
+ArCl
+46.3 53.9 44.4 59.2 58.9 54.0 63.2 60.6 63.6
+59.1 64.6 59.6 65.0
+70.73
+
+ArPr
+67.5 54.5 68.7 77.0 76.3 76.4 80.1 83.2 82.5
+83.9 85.1 84.5 85.8
+89.48
+
+ArRe
+75.9 78.1 74.6 79.5 81.4 83.0 80.7 88.4 89.6
+88.5 92.9 89.0 93.4
+90.65
+
+ClAr
+59.1 61.3 67.5 62.9 70.4 62.1 66.7 71.8 73.7
+72.7 78.4 73.7 78.8
+79.65
+
+ClPr
+59.9 48.0 65.0 65.7 73.0 64.5 69.3 72.8 73.9
+73.5 76.8 74.2 77.4
+86.22
+
+ClRe
+62.7 63.3 77.8 75.0 77.8 71.0 77.2 83.4 81.4
+78.4 86.9 79.3 87.3
+86.44
+
+PrAr
+58.2 54.2 59.8 68.3 72.4 70.8 71.6 75.5 75.4
+75.9 79.0 77.0 79.3
+80.80
+
+PrCl
+41.8 52.0 44.7 55.4 55.3 49.8 53.9 61.6 61.6
+59.9 65.7 60.7 66.0
+71.08
+
+PrRe
+74.9 81.3 80.1 84.4 80.4 80.5 84.6 86.5 87.9
+90.3 89.0 91.0 89.6
+89.15
+
+ReAr
+67.4 76.5 72.2 75.7 75.8 77.5 77.4 79.3 83.6
+81.3 81.1 81.8 81.3
+83.96
+
+ReCl
+48.2 56.8 50.2 57.7 60.4 59.1 57.9 62.8 67.2
+68.6 67.7 69.4 68.1
+72.50
+
+RePr
+74.2 82.9 78.7 84.5 79.9 79.9 85.5 86.1 88.8
+88.7 86.4 89.3 86.8
+90.29
+
+Avg.
+61.3 63.6 65.3 70.5 71.8 69.0 72.3 76.0 77.4
+76.7 79.5 77.5 79.9
+82.58
+
+Open-set DA (SourceTarget)
+ResNet-50 [He et al., 2016] ATI- [Panareda Busto and Gall, 2017] OSBP [Saito et al., 2018b] OpenMax [Bendale and Boult, 2016] STA [Liu et al., 2019]
+SHOT-IM [Liang et al., 2020a] SHOT [Liang et al., 2020a]
+ACT
+
+ArCl
+53.4 55.2 56.7 56.5 58.1
+62.5 64.5
+63.62
+
+ArPr
+52.7 52.6 51.5 52.9 53.1
+77.8 80.4
+82.98
+
+ArRe
+51.9 53.5 49.2 53.7 54.4
+83.9 84.7
+83.80
+
+ClAr
+69.3 69.1 67.5 69.1 71.6
+60.9 63.1
+67.85
+
+ClPr
+61.8 63.5 65.5 64.8 69.3
+73.4 75.4
+77.78
+
+ClRe
+74.1 74.1 74.0 74.5 81.9
+79.4 81.2
+79.79
+
+PrAr
+61.4 61.7 62.5 64.1 63.4
+64.7 65.3
+68.48
+
+PrCl
+64.0 64.5 64.8 64.0 65.2
+58.7 59.3
+61.40
+
+PrRe
+70.0 70.7 69.3 71.2 74.9
+83.1 83.3
+81.71
+
+ReAr
+78.7 79.2 80.6 80.3 85.0
+69.1 69.6
+75.02
+
+ReCl
+71.0 72.9 74.7 73.0 75.8
+62.0 64.6
+64.25
+
+RePr
+74.9 75.8 71.5 76.9 80.8
+82.1 82.3
+85.09
+
+Avg.
+65.3 66.1 65.7 66.7 69.5
+71.5 72.8
+74.31
+
+Table 5: Classification accuracies (%) on OfficeHome dataset for partial-set and open-set DA (3 shot). Bold denotes the best performance.
+
+Method
+
+No adapt SHOT [Liang et al., 2020a] SHOT++ [Liang et al., 2021] AaD [Yang et al., 2022] CoWA-JMDS [Lee et al., 2022] NRC [Yang et al., 2021a] G-SFDA [Yang et al., 2021b]
+
+1
+
+ACT
+
+3
+
+5
+
+AD
+77.33 89.33 93.67 93.33 94.67 91.67 88.67
+93.22 97.70 99.13
+
+AW
+76.52 92.66 92.45 93.08 94.97 91.82 89.52
+85.64 95.73 97.24
+
+DA
+57.33 73.82 74.76 73.94 76.00 74.94 73.47
+68.09 77.08 79.81
+
+DW
+93.92 98.32 98.11 97.90 98.53 98.11 97.27
+98.25 99.67 99.32
+
+WA
+62.00 72.64 75.47 74.35 77.37 75.65 72.99
+69.65 77.46 79.95
+
+WD
+98.67 100.00 99.00 99.67 99.67 99.33 100.00
+99.93 100.00 100.00
+
+Avg
+77.63 87.79 88.91 88.71 90.20 88.59 86.99
+85.80 91.27 92.58
+
+Table 6: Accuracies of SFUDA and ACT method on the Office31 dataset. A, D, and W denote Amazon, DSLR, and Webcam, respectively. The numbers next to ACT represent the number of labeled images per class used for training. Underline indicates the best performance among SFUDA methods. Bold indicate fine-tuning performance surpassing the best performance of SFUDA methods.
+
+Method
+
+No adapt SHOT [Liang et al., 2020a] SHOT++ [Liang et al., 2021] AaD [Yang et al., 2022] CoWA-JMDS [Lee et al., 2022] NRC [Yang et al., 2021a] G-SFDA [Yang et al., 2021b]
+
+1
+
+ACT
+
+3 5
+
+10
+
+ArCl
+48.19 54.91 56.05 56.16 57.47 55.59 54.98
+51.86 61.47 66.89 74.37
+
+ArPr
+64.56 75.45 77.78 77.89 78.60 76.76 75.19
+69.78 77.89 81.77 87.34
+
+ArRw
+73.20 79.97 80.12 79.74 81.50 79.74 79.82
+73.39 77.18 79.37 84.44
+
+ClAr
+49.93 64.68 65.57 63.72 67.76 65.50 64.27
+56.86 66.66 71.42 78.93
+
+ClPr
+61.64 75.60 78.90 79.99 79.43 76.80 73.65
+68.28 78.27 81.45 86.44
+
+ClRw
+62.16 77.14 77.37 78.52 79.89 77.41 75.88
+67.91 74.48 74.95 81.22
+
+PrAr
+49.79 64.61 65.30 63.10 65.77 65.09 63.44
+58.82 67.74 72.15 80.04
+
+PrCl
+42.31 53.68 53.61 56.13 56.74 54.94 52.58
+51.09 61.75 67.21 74.31
+
+PrRw
+72.21 81.38 80.70 80.81 82.27 80.51 80.58
+75.07 77.74 81.42 84.24
+
+RwAr
+61.59 71.74 71.33 69.75 71.40 71.12 70.30
+69.11 74.22 77.02 82.61
+
+RwCl
+48.30 57.39 56.51 57.85 59.91 56.97 57.58
+56.77 64.49 68.99 75.76
+
+RwPr
+77.25 82.28 83.56 84.83 84.08 82.51 82.36
+79.83 84.35 86.32 89.74
+
+Avg
+59.26 69.90 70.57 70.71 72.07 70.25 69.22
+64.90 72.19 75.75 81.62
+
+Table 7: Accuracies of SFUDA and ACT method on the OfficeHome dataset. Ar, Cl, Pr, and Rw denote Art, Clipart, Product, and Real World, respectively. Other notations are the same as in Table 6.
+
+Method
+
+No adapt SHOT [Liang et al., 2020a] SHOT++ [Liang et al., 2021] AaD [Yang et al., 2022] CoWA-JMDS [Lee et al., 2022] NRC [Yang et al., 2021a] G-SFDA [Yang et al., 2021b]
+
+10
+
+ACT
+
+20 30
+
+50
+
+aeroplane
+60.62 95.16 97.21 96.43 95.33 96.98 96.48
+91.59 93.79 94.69 95.89
+
+bicycle
+19.60 89.06 86.42 91.02 88.49 93.19 88.20
+81.89 85.53 88.15 86.77
+
+bus
+52.24 79.39 89.48 88.95 82.12 83.97 84.40
+79.40 82.24 77.15 82.36
+
+car
+73.26 53.66 84.93 80.40 71.21 60.60 70.64
+75.07 74.00 71.25 75.10
+
+horse
+64.99 92.79 97.86 96.56 95.70 96.23 95.92
+94.33 94.18 94.31 94.69
+
+knife
+4.45 94.38 97.51 96.64 97.99 95.50 96.38
+90.61 89.37 91.94 93.64
+
+motorcycle
+82.75 79.38 92.66 89.71 89.79 81.48 89.04
+81.92 84.46 85.38 88.26
+
+person
+16.63 80.83 84.00 79.83 85.54 79.75 79.46
+84.74 87.22 89.00 86.60
+
+plant
+73.15 89.49 96.96 94.39 92.82 93.56 93.78
+91.10 90.79 92.30 92.53
+
+skateboard
+35.66 86.62 92.47 90.87 90.35 91.96 91.01
+79.86 89.12 89.85 92.94
+
+train
+82.46 86.74 93.55 91.01 87.29 90.67 89.22
+83.68 83.68 86.62 86.83
+
+truck
+7.53 53.72 29.04 47.71 56.07 59.79 42.07
+47.20 55.73 58.69 61.60
+
+Avg
+47.78 81.77 86.84 86.68 86.06 85.31 84.72
+81.78 84.18 84.95 86.44
+
+Table 8: Accuracies of SFUDA and ACT method on the VisDA-C dataset (Synthesis  Real). Other notations are the same as in Table 6.
+
+Method
+
+No adapt SHOT [Liang et al., 2020a] SHOT++ [Liang et al., 2021] AaD [Yang et al., 2022] CoWA-JMDS [Lee et al., 2022] NRC [Yang et al., 2021a] G-SFDA [Yang et al., 2021b]
+
+1
+
+ACT
+
+3
+
+5
+
+L100L38
+26.24 20.07 29.32 17.15 33.08 19.28 21.59
+63.73 65.14 66.79
+
+L100L43
+20.34 23.82 22.08 17.35 31.42 22.70 29.14
+36.38 38.92 47.16
+
+L100L46
+27.08 28.48 25.47 22.14 26.35 29.47 38.17
+40.20 44.04 51.05
+
+L38L100
+29.31 35.95 22.76 24.56 36.26 38.46 38.38
+55.79 62.46 68.57
+
+L38L43
+31.35 28.98 31.79 28.10 38.33 26.88 27.03
+40.65 42.76 48.94
+
+L38L46
+31.59 13.57 18.44 13.30 19.25 14.94 22.40
+32.69 38.79 50.93
+
+L43L100
+24.11 26.20 33.31 28.92 28.23 30.78 40.86
+60.57 69.71 76.00
+
+L43L38
+44.09 14.52 22.61 23.34 13.57 22.64 17.42
+62.41 66.92 68.09
+
+L43L46
+38.66 32.72 25.60 23.06 26.62 32.16 33.29
+46.00 45.03 58.38
+
+L46L100
+33.60 34.32 35.82 31.56 32.52 28.86 35.01
+68.70 68.22 71.15
+
+L46L38
+21.57 12.63 13.00 7.35 9.96 11.04 16.25
+64.74 67.44 66.42
+
+L46L43
+22.18 37.41 44.59 34.59 47.56 39.04 52.55
+58.81 59.54 60.09
+
+Avg
+29.18 25.72 27.07 22.62 28.60 26.35 31.01
+52.56 55.75 61.13
+
+Table 9: Accuracies of SFUDA and ACT method on the Terra dataset. L100, L38, L43, and L46 denote different locations (i.e., domains). Other notations are the same as in Table 6.
+
+Method ACT
+
+2019 2020 2021
+
+ArCl
+66.38 65.41 65.18
+
+ArPr
+81.11 82.17 82.01
+
+ArRw
+80.34 80.58 80.79
+
+ClAr
+68.90 71.63 70.60
+
+ClPr
+80.13 80.34 80.53
+
+ClRw
+75.82 76.76 76.41
+
+PrAr
+71.64 72.69 71.74
+
+PrCl
+66.65 66.61 67.59
+
+PrRw
+80.86 81.37 80.82
+
+RwAr
+76.83 77.99 76.97
+
+RwCl
+69.13 68.86 69.94
+
+RwPr
+86.16 86.70 86.14
+
+Avg
+75.33 75.93 75.73
+
+Table 10: Accuracies of ACT method on the OfficeHome dataset using different target random seed. Ar, Cl, Pr, and Rw denote Art, Clipart, Product, and Real World, respectively. The numbers next to ACT represent the number of random seeds.
+
+shot samples plays a crucial role in the few-shot setting. To evaluate this factor, we conducted experiments using three random seeds for data sampling in the target domain. Additionally, we employed three source pre-trained models, consistent with those used in other experiments. The results, presented in 10, reveal that the difference between the highest and lowest performance is 0.6%, which is less than 1%. Furthermore, the variance among the three results is less than 0.5%. These findings indicate that our method effectively mitigates the impact of the quality of selected few-shot samples in the target domain, demonstrating its potential for widespread application in various real-world scenarios.
+Figure 4: t-SNE visualization results on the Office-Home dataset (Ar  Cl(top) and Cl  Ar(bottom)). The left picture indicates the result from the source pre-trained model. The right picture indicates the result from the adapted model. Different colors represent different classes. The first 10 classes are sampled for clear visualization.
+Figure 5: t-SNE visualization results on the Office-Home dataset (Ar  Cl(top) and Cl  Ar(bottom)). The left picture indicates the result from the source pre-trained model. The right picture indicates the result from the adapted model. Different colors represent different classes. The first 10 classes are sampled for clear visualization.
+D Discussion of Training Process and Time Consumption
+Our method involves a complex training process with twostep optimization and multiple loss functions, which require slightly more time to execute. However, in a few-shot setting, the primary goal is to minimize the target dataset size, making training time less critical. Additionally, training time and model performance can be balanced by reducing the number of iterations, implementing early stopping when performance plateaus, and similar strategies.
+E Analysis of the Influence of the Quality of the Chosen Few-shot Samples
+Since our method utilizes data from the target domain through random few-shot sampling, the quality of the selected few-
+
+
