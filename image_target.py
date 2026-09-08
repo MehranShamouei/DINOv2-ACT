@@ -3,6 +3,7 @@ import os, sys
 import os.path as osp
 import torchvision
 import numpy as np
+import copy
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -501,9 +502,9 @@ def train_target(args):
                 best_epoch = epoch_num
                 print('Save the model with acc:', best_acc)
                 print('Save the model with epoch:', best_epoch)
-                best_netF = netF.state_dict()
-                best_netC1 = netC1.state_dict()
-                best_netC2 = netC2.state_dict()
+                best_netF = copy.deepcopy(netF.state_dict())
+                best_netC1 = copy.deepcopy(netC1.state_dict())
+                best_netC2 = copy.deepcopy(netC2.state_dict())
 
             args.out_file.write(log_str + '\n')
             args.out_file.flush()

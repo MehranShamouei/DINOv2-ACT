@@ -138,6 +138,22 @@ def download_office_home(data_dir):
               full_path)
 
 
+# Office-31 ###################################################################
+
+def download_office31(data_dir):
+    """Download and extract the three Office-31 domains."""
+    full_path = stage_path(data_dir, "office")
+    domains = {
+        "amazon": "https://people.eecs.berkeley.edu/~jhoffman/domainadapt/amazon.tar",
+        "dslr": "https://people.eecs.berkeley.edu/~jhoffman/domainadapt/dslr.tar",
+        "webcam": "https://people.eecs.berkeley.edu/~jhoffman/domainadapt/webcam.tar",
+    }
+
+    for domain, url in domains.items():
+        archive_path = os.path.join(full_path, domain + ".tar")
+        download_and_extract(url, archive_path)
+
+
 # DomainNET ###################################################################
 
 def download_domain_net(data_dir):
@@ -296,15 +312,19 @@ def download_spawrious(data_dir, remove=True):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Download datasets')
     parser.add_argument('--data_dir', type=str, required=True)
+    parser.add_argument(
+        '--dataset',
+        type=str,
+        default='terra_incognita',
+        choices=['office31', 'office_home', 'terra_incognita', 'vlcs', 'pacs'],
+    )
     args = parser.parse_args()
 
-    # download_mnist(args.data_dir)
-    # download_pacs(args.data_dir)
-    # download_office_home(args.data_dir)
-    # download_domain_net(args.data_dir)
-    # download_vlcs(args.data_dir)
-    download_terra_incognita(args.data_dir)
-    # download_spawrious(args.data_dir)
-    # download_sviro(args.data_dir)
-    # Camelyon17Dataset(root_dir=args.data_dir, download=True)
-    # FMoWDataset(root_dir=args.data_dir, download=True)
+    downloaders = {
+        'office31': download_office31,
+        'office_home': download_office_home,
+        'terra_incognita': download_terra_incognita,
+        'vlcs': download_vlcs,
+        'pacs': download_pacs,
+    }
+    downloaders[args.dataset](args.data_dir)
