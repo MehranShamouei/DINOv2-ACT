@@ -437,6 +437,8 @@ def train_target(args):
     best_epoch = 0
     num_k = args.num_k
 
+    accuracy_history = []
+
     for epoch_num in range(max_epoch + 1):
         src_netF.eval()
         src_netC1.eval()
@@ -517,7 +519,7 @@ def train_target(args):
             else:
                 test_loss, test_acc = test(dset_loaders['test'], netF, netC1, netC2, False)
                 log_str = 'Task: {}, Iter:{}/{}; Accuracy = {:.2f}%, Loss = {:.4f}'.format(args.name, epoch_num, max_epoch, test_acc, test_loss)
-                
+            accuracy_history.append(test_acc)   
             if test_acc >= best_acc:
                 best_acc = test_acc
                 best_epoch = epoch_num
@@ -540,7 +542,15 @@ def train_target(args):
     torch.save(best_netC1, osp.join(args.output_dir, "target_C1_" + ".pt"))
     torch.save(best_netC2, osp.join(args.output_dir, "target_C2_" + ".pt"))
         
-    log_str = 'Best Accuracy = {:.2f}%'.format(best_acc)
+    average_acc = sum(accuracy_history) / len(accuracy_history)
+
+    log_str = (
+        'Best Accuracy = {:.2f}%\n'
+        'Average Accuracy = {:.2f}%\n'
+    ).format(
+        best_acc,
+        average_acc,
+    )
     args.out_file.write(log_str + '\n')
     args.out_file.flush()
     print(log_str+'\n')
