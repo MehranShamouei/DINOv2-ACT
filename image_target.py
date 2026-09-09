@@ -122,38 +122,59 @@ def data_load(args):
     #num_worker = 0
     print('Using {} dataloader workers'.format(num_worker))
     if args.few_shot:
-        #target_dataset = ImageFolder(os.path.join(args.t_dset_path))
-        #tr_idx, te_idx = utils.split_dataset(target_dataset, ratio=args.ratio, seed=args.seed)
-        #dsets["target"], dsets["test"] = utils._SplitTrainDataset(target_dataset, tr_idx), utils._SplitTestDataset(target_dataset, te_idx)
-        #dsets["target"].transform = image_train()
-        #dsets["test"].transform = image_test()
-        #keys = list(range(len(dsets["target"])))
-        #targets = torch.tensor(dsets["target"].underlying_dataset.targets)[dsets["target"].keys]
-        #assert len(keys) == len(targets)
-        #few_shot_idx = utils.few_shot_subset(targets,args.few_shot)
-        #dsets["target"] = torch.utils.data.Subset(dsets["target"],few_shot_idx)
+        target_dataset = ImageFolder(args.t_dset_path)
+        targets = torch.tensor(target_dataset.targets)
 
-        train_dataset = ImageFolder(os.path.join(args.t_dset_path))
-        test_dataset = ImageFolder(os.path.join(args.test_dset_path))
-        tr_idx = [i for i in range(len(train_dataset))]
-        te_idx = [i for i in range(len(test_dataset))]
-        random.shuffle(tr_idx)
-        random.shuffle(te_idx)
-        dsets["target"] = utils._SplitTrainDatasetNew(train_dataset, tr_idx)
-        dsets["test"] = utils._SplitTestDataset(test_dataset, te_idx)
+        few_shot_idx = utils.few_shot_subset(
+            targets,
+            args.few_shot
+        )
+
+        all_idx = set(range(len(target_dataset)))
+        te_idx = sorted(all_idx - set(few_shot_idx))
+
+        dsets["target"] = utils._SplitTrainDatasetNew(
+            target_dataset,
+            few_shot_idx
+        )
         dsets["target"].transform = image_train()
+
+        dsets["test"] = utils._SplitTestDataset(
+            target_dataset,
+            te_idx
+        )
         dsets["test"].transform = image_test()
-        keys = list(range(len(dsets["target"])))
-        targets = torch.tensor(dsets["target"].underlying_dataset.targets)[dsets["target"].keys]
-        assert len(keys) == len(targets)
-        few_shot_idx = utils.few_shot_subset(targets,args.few_shot)
-        dsets["target"] = torch.utils.data.Subset(dsets["target"], few_shot_idx)
-        te_idx = list(set(tr_idx).difference(set(few_shot_idx)))
-        dsets["test"] = torch.utils.data.Subset(dsets["test"], te_idx)
+
+        assert set(few_shot_idx).isdisjoint(te_idx)
+        assert set(few_shot_idx).union(te_idx) == set(
+            range(len(target_dataset))
+        )
+
+        train_paths = {
+            target_dataset.samples[index][0]
+            for index in few_shot_idx
+        }
+        test_paths = {
+            target_dataset.samples[index][0]
+            for index in te_idx
+        }
+
+        assert train_paths.isdisjoint(test_paths)
+
+        print(f"Few-shot samples: {len(few_shot_idx)}")
+        print(f"Test samples: {len(te_idx)}")
+        print(f"Total samples: {len(target_dataset)}")
+        print("Train/test image overlap: 0")
 
     else:
-        dsets["target"] = ImageList_idx(txt_tar, transform=image_train())
-        dsets["test"] = ImageList_idx(txt_test, transform=image_test())
+        dsets["target"] = ImageList_idx(
+            txt_tar,
+            transform=image_train()
+        )
+        dsets["test"] = ImageList_idx(
+            txt_test,
+            transform=image_test()
+        )
 
     dset_loaders["target"] = DataLoader(dsets["target"], batch_size=train_bs, shuffle=True, num_workers=num_worker, drop_last=False)
     #dset_loaders["target"] = InfiniteDataLoader(dsets["target"], batch_size=train_bs, num_workers=num_worker)

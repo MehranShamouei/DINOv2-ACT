@@ -144,13 +144,13 @@ def download_office31(data_dir):
     """Download and extract the three Office-31 domains."""
     full_path = stage_path(data_dir, "office")
     domains = {
-        "amazon": "https://people.eecs.berkeley.edu/~jhoffman/domainadapt/amazon.tar",
-        "dslr": "https://people.eecs.berkeley.edu/~jhoffman/domainadapt/dslr.tar",
-        "webcam": "https://people.eecs.berkeley.edu/~jhoffman/domainadapt/webcam.tar",
+        "amazon": "http://csr.bu.edu/ftp/visda/2017/Office-31/amazon.zip",
+        "dslr": "http://csr.bu.edu/ftp/visda/2017/Office-31/dslr.zip",
+        "webcam": "http://csr.bu.edu/ftp/visda/2017/Office-31/webcam.zip",
     }
 
     for domain, url in domains.items():
-        archive_path = os.path.join(full_path, domain + ".tar")
+        archive_path = os.path.join(full_path, domain + ".zip")
         download_and_extract(url, archive_path)
 
 
