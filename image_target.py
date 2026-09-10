@@ -641,8 +641,8 @@ if __name__ == "__main__":
         folder = './data/'
         args.s_dset_path = folder + args.dset + '/' + names[args.s] + '_list.txt'
         if args.few_shot:
-            args.t_dset_path = './' + args.dset + '/' + names[args.t]
-            args.test_dset_path = './' + args.dset + '/' + names[args.t]
+            args.t_dset_path = folder + args.dset + '/' + names[args.t]
+            args.test_dset_path = folder + args.dset + '/' + names[args.t]
         else:
             args.t_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
             args.test_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
