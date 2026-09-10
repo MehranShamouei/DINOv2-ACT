@@ -70,7 +70,19 @@ def data_load(args):
     train_bs = args.batch_size
     txt_src = open(args.s_dset_path).readlines()
     txt_test = open(args.test_dset_path).readlines()
+    if args.dset == 'terra_incognita':
+        def fix_terra_path(line):
+            image_path, label = line.rsplit(maxsplit=1)
 
+            if image_path.startswith('./terra_incognita/'):
+                image_path = './data/' + image_path[2:]
+            elif image_path.startswith('terra_incognita/'):
+                image_path = './data/' + image_path
+
+            return f'{image_path} {label}\n'
+
+        txt_src = [fix_terra_path(line) for line in txt_src]
+        txt_test = [fix_terra_path(line) for line in txt_test]
     if not args.da == 'uda':
         label_map_s = {}
         for i in range(len(args.src_classes)):
