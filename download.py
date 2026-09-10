@@ -141,14 +141,13 @@ def download_office_home(data_dir):
 # Office-31 ###################################################################
 
 def download_office31(data_dir):
-    """Download and extract the three Office-31 domains."""
-    full_path = stage_path(data_dir, "office")
+    """Download and extract the Office-31 dataset."""
+    archive_path = os.path.join(data_dir, "office.zip")
     
-    download_and_extract("https://drive.google.com/file/d/1sG-IVY4AbFuDO23gYR-cyhHXM2qqzZC-/view?usp=sharing",
-                             os.path.join(data_dir, "office.zip"))
-    
-    os.rename(os.path.join(data_dir, "Office"),
-                  full_path)
+    download_and_extract(
+        "https://drive.google.com/uc?id=1sG-IVY4AbFuDO23gYR-cyhHXM2qqzZC-",
+        archive_path
+    )
 
 
 # DomainNET ###################################################################
