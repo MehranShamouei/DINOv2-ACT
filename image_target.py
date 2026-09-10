@@ -426,11 +426,11 @@ def train_target(args):
 
     max_epoch = args.max_iter // (args.few_shot * args.class_num)
     if args.few_shot == 5:
-        interval_iter = max_epoch // args.interval
+        interval_iter = max(1, max_epoch // args.interval)
     elif args.dset == 'terra_incognita':
-        interval_iter = max_epoch // args.interval
+        interval_iter = max(1, max_epoch // args.interval)
     elif args.dset == 'VLCS':
-        interval_iter = max_epoch // args.interval
+        interval_iter = max(1, max_epoch // args.interval)
     else:
         interval_iter = 1
     best_acc = 0
