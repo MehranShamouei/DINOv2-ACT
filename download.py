@@ -143,15 +143,12 @@ def download_office_home(data_dir):
 def download_office31(data_dir):
     """Download and extract the three Office-31 domains."""
     full_path = stage_path(data_dir, "office")
-    domains = {
-        "amazon": "http://csr.bu.edu/ftp/visda/2017/Office-31/amazon.zip",
-        "dslr": "http://csr.bu.edu/ftp/visda/2017/Office-31/dslr.zip",
-        "webcam": "http://csr.bu.edu/ftp/visda/2017/Office-31/webcam.zip",
-    }
-
-    for domain, url in domains.items():
-        archive_path = os.path.join(full_path, domain + ".zip")
-        download_and_extract(url, archive_path)
+    
+    download_and_extract("https://drive.google.com/file/d/1sG-IVY4AbFuDO23gYR-cyhHXM2qqzZC-/view?usp=sharing",
+                             os.path.join(data_dir, "office.zip"))
+    
+    os.rename(os.path.join(data_dir, "Office"),
+                  full_path)
 
 
 # DomainNET ###################################################################
