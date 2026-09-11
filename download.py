@@ -128,14 +128,19 @@ def download_pacs(data_dir):
 # Office-Home #################################################################
 
 def download_office_home(data_dir):
-    # Original URL: http://hemanthdv.org/OfficeHome-Dataset/
-    full_path = stage_path(data_dir, "office_home")
+    new = os.path.join(data_dir, "OfficeHomeDataset_10072016")
+    old = os.path.join(data_dir, "office-home")
 
-    download_and_extract("https://drive.google.com/uc?id=1uY0pj7oFsjMxRwaD3Sxy0jgel0fsYXLC",
-                         os.path.join(data_dir, "office_home.zip"))
+    download_and_extract(
+        "https://drive.google.com/uc?id=1D8W6-uKeFRsZTJnc2Py2S12AWf8HQELY",
+        os.path.join(data_dir, "office_home.zip")
+    )
 
-    os.rename(os.path.join(data_dir, "OfficeHomeDataset_10072016"),
-              full_path)
+    if os.path.exists(old):
+        shutil.copytree(old, new, dirs_exist_ok=True)
+        shutil.rmtree(old)
+
+    os.rename(new, old)
 
 
 # Office-31 ###################################################################
@@ -319,7 +324,7 @@ if __name__ == "__main__":
     downloaders = {
         'office31': download_office31,
         'office_home': download_office_home,
-        'terra_incognita': download_terra_incognita,
+        'change': download_terra_incognita,
         'vlcs': download_vlcs,
         'pacs': download_pacs,
     }
